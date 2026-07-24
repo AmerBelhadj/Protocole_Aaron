@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Aaron — Centres & Protocoles d'urgence</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1d4ed8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Aaron Urgences">
+<link rel="apple-touch-icon" href="assets/icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
+<meta name="description" content="Localisation des centres de traitement de l'hémophilie (France & Tunisie) et protocoles d'urgence illustrés, utilisables hors-ligne.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root{
+    --fr:#2563eb; --tn:#dc2626; --near:#16a34a;
+    --bg:#f7f8fa; --panel:#ffffff; --text:#1f2430; --muted:#6b7280; --border:#e5e7eb;
+  }
+  *{box-sizing:border-box;}
+  html{background:#eaf4ff;}
+  body{
+    margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--text);
+    min-height:100vh;
+    background:
+      radial-gradient(circle at 8% 4%, rgba(255,255,255,.9) 0, rgba(255,255,255,0) 7%),
+      radial-gradient(circle at 22% 14%, rgba(255,255,255,.75) 0, rgba(255,255,255,0) 4%),
+      radial-gradient(circle at 61% 6%, rgba(255,255,255,.8) 0, rgba(255,255,255,0) 5%),
+      radial-gradient(circle at 88% 18%, rgba(255,255,255,.7) 0, rgba(255,255,255,0) 4%),
+      radial-gradient(circle at 40% 92%, rgba(255,223,150,.35) 0, rgba(255,223,150,0) 22%),
+      linear-gradient(180deg, #dcefff 0%, #eaf6ee 45%, #fbf6e8 100%);
+    background-attachment:fixed;
+    background-repeat:no-repeat;
+  }
+  /* petite bande décorative "cour d'école" tout en bas, discrète, ne gêne pas la lecture */
+  body::after{
+    content:"";
+    position:fixed; left:0; right:0; bottom:0; height:64px; z-index:-1;
+    background-image:url('assets/img/bg-band.svg');
+    background-repeat:repeat-x; background-position:bottom center; background-size:auto 64px;
+    opacity:.55; pointer-events:none;
+  }
+
+  .topbar{
+    display:flex; align-items:center; gap:8px;
+    background:linear-gradient(120deg,#1d4ed8 0%,#2563eb 55%,#0f9b8e 130%); color:#fff; padding:10px 14px;
+    position:sticky; top:0; z-index:2000;
+    box-shadow:0 2px 10px rgba(17,24,39,.18);
+  }
+  .topbar h1{font-size:15px;margin:0;font-weight:700;flex:1;}
+  .tabs{display:flex;gap:6px;}
+  .tab-btn{
+    background:rgba(255,255,255,.08); color:#fff; border:1px solid rgba(255,255,255,.2);
+    padding:8px 14px; border-radius:20px; font-size:13px; font-weight:600; cursor:pointer;
+  }
+  .tab-btn.active{background:#fff;color:#111827;}
+
+  .view{display:none;}
+  .view.active{display:block;}
+
+  /* ---------- CENTRES VIEW ---------- */
+  .app{display:flex;height:calc(100vh - 46px);min-height:520px;}
+  .sidebar{width:380px;min-width:300px;background:rgba(255,255,255,.94);backdrop-filter:blur(2px);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+  .sidebar-header{padding:14px 16px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;}
+  .sidebar-header p{margin:0;font-size:12.5px;color:var(--muted);}
+  .mascot-illustration{width:52px;height:auto;flex-shrink:0;}
+  .proto-hero{display:flex;align-items:center;gap:16px;background:linear-gradient(120deg,#eef6ff,#eafaf3);border:1px solid var(--border);border-radius:16px;padding:14px 18px;margin-bottom:16px;}
+  .proto-hero .mascot-illustration{width:96px;}
+  .proto-hero h2{margin:0 0 4px;font-size:17px;color:#1e293b;}
+  .proto-hero p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.5;}
+  @media (max-width:520px){ .proto-hero{flex-direction:column;text-align:center;} }
+  .search-box{padding:10px 16px;border-bottom:1px solid var(--border);}
+  .search-box input{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;outline:none;}
+  .locate-btn{
+    margin:10px 16px 0; padding:9px 12px; border-radius:8px; border:none;
+    background:var(--near); color:#fff; font-weight:700; font-size:13px; cursor:pointer; width:calc(100% - 32px);
+  }
+  .locate-status{font-size:11.5px;color:var(--muted);padding:6px 16px 0;}
+  .filters{display:flex;gap:8px;padding:10px 16px 12px;}
+  .filter-btn{flex:1;padding:7px 10px;border-radius:20px;border:1px solid var(--border);background:#fff;font-size:12.5px;font-weight:600;cursor:pointer;text-align:center;color:var(--muted);}
+  .filter-btn.active[data-f="all"]{background:#111827;color:#fff;border-color:#111827;}
+  .filter-btn.active[data-f="FR"]{background:var(--fr);color:#fff;border-color:var(--fr);}
+  .filter-btn.active[data-f="TN"]{background:var(--tn);color:#fff;border-color:var(--tn);}
+  .list{flex:1;overflow-y:auto;padding:6px 10px 16px;}
+  .group-title{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:12px 8px 6px;font-weight:700;}
+  .card{padding:12px;margin:4px 0;border-radius:10px;cursor:pointer;border:1px solid transparent;}
+  .card:hover{background:#f1f4f9;}
+  .card.selected{background:#eef4ff;border-color:#c7d9fb;}
+  .card.nearest{border-color:var(--near);background:#f0fdf4;}
+  .card-top{display:flex;align-items:flex-start;gap:8px;}
+  .flag-dot{width:9px;height:9px;border-radius:50%;margin-top:5px;flex-shrink:0;}
+  .flag-dot.FR{background:var(--fr);} .flag-dot.TN{background:var(--tn);}
+  .card-title{font-size:14px;font-weight:700;line-height:1.3;}
+  .card-sub{font-size:12.5px;color:var(--muted);margin-top:2px;}
+  .nearest-badge{display:inline-block;background:var(--near);color:#fff;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:20px;margin-top:5px;}
+  .card-detail{margin-top:8px;font-size:12.5px;line-height:1.7;color:#374151;display:none;}
+  .card.selected .card-detail{display:block;}
+  .card-detail a{color:#2563eb;text-decoration:none;}
+  .row{display:flex;gap:6px;align-items:flex-start;margin-bottom:2px;}
+  .row .ico{width:16px;flex-shrink:0;text-align:center;}
+  .badge{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:20px;background:#fee2e2;color:#b91c1c;margin-top:6px;}
+  .call-btn{display:inline-block;background:var(--fr);color:#fff;text-decoration:none;font-size:12.5px;font-weight:700;padding:6px 10px;border-radius:8px;margin-top:6px;margin-right:6px;}
+  .edit-btn{display:inline-block;background:#fff;color:#374151;border:1px solid var(--border);font-size:12px;font-weight:600;padding:6px 10px;border-radius:8px;margin-top:6px;cursor:pointer;}
+  .edit-form{margin-top:8px;padding:10px;background:#f9fafb;border:1px dashed var(--border);border-radius:8px;}
+  .edit-form label{display:block;font-size:11px;color:var(--muted);margin:6px 0 2px;font-weight:700;}
+  .edit-form input{width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px;}
+  .edit-actions{margin-top:8px;display:flex;gap:6px;}
+  .edit-actions button{flex:1;padding:7px;border-radius:6px;border:none;font-size:12px;font-weight:700;cursor:pointer;}
+  .btn-save{background:var(--near);color:#fff;}
+  .btn-cancel{background:#e5e7eb;color:#374151;}
+  .btn-reset{background:#fee2e2;color:#b91c1c;}
+  .map-wrap{flex:1;position:relative;background:#dbe9f2;}
+  #map{width:100%;height:100%;background:#dbe9f2;}
+  .leaflet-container{background:#dbe9f2 !important;}
+  .emergency-banner{position:absolute;bottom:16px;left:16px;right:16px;max-width:520px;background:#111827;color:#fff;padding:12px 16px;border-radius:12px;font-size:13px;z-index:1000;box-shadow:0 6px 18px rgba(0,0,0,.25);display:flex;gap:14px;align-items:center;}
+  .emergency-banner b{display:block;font-size:13.5px;margin-bottom:2px;}
+  .emergency-banner .nums{display:flex;gap:16px;}
+  .emergency-banner .num{font-weight:800;font-size:16px;}
+  .emergency-banner .num small{display:block;font-weight:500;font-size:11px;opacity:.75;}
+  .leaflet-popup-content-wrapper{border-radius:12px;}
+  .popup-title{font-weight:800;font-size:14px;margin-bottom:4px;}
+  .popup-sub{color:var(--muted);font-size:12px;margin-bottom:6px;}
+  .popup-body{font-size:12.5px;line-height:1.6;}
+  .popup-body a{color:#2563eb;text-decoration:none;}
+
+  /* ---------- PROTOCOLS VIEW ---------- */
+  .protocols-wrap{max-width:900px;margin:0 auto;padding:16px 16px 60px;}
+  .quickcall{background:#111827;color:#fff;border-radius:14px;padding:14px 16px;margin-bottom:18px;}
+  .quickcall h3{margin:0 0 10px;font-size:14px;}
+  .quickcall .group{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;}
+  .quickcall a{background:#fff;color:#111827;text-decoration:none;font-weight:800;font-size:13px;padding:9px 14px;border-radius:10px;}
+  .quickcall .grouplabel{font-size:11px;opacity:.7;width:100%;margin-bottom:2px;}
+  .proto-card{background:var(--panel);border-radius:14px;overflow:hidden;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1px solid var(--border);}
+  .proto-head{padding:14px 16px;display:flex;align-items:center;gap:10px;}
+  .proto-head h2{margin:0;font-size:16px;flex:1;}
+  .proto-urgent{background:#dc2626;color:#fff;font-size:11px;font-weight:800;padding:4px 9px;border-radius:20px;}
+  .proto-sub{font-size:12.5px;color:var(--muted);padding:0 16px 10px;margin-top:-6px;}
+  .proto-body{display:flex;gap:16px;padding:0 16px 16px;flex-wrap:wrap;}
+  .proto-img{width:180px;flex-shrink:0;border-radius:10px;overflow:hidden;}
+  .proto-img img{width:100%;display:block;}
+  .proto-steps{flex:1;min-width:220px;}
+  .step-row{display:flex;gap:10px;align-items:flex-start;margin-bottom:9px;font-size:14px;line-height:1.5;}
+  .step-num{flex-shrink:0;width:20px;height:20px;border-radius:50%;background:#111827;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;margin-top:1px;}
+  .step-ico{font-size:19px;flex-shrink:0;width:26px;text-align:center;}
+  .step-text{flex:1;}
+  .noimg-placeholder{width:180px;flex-shrink:0;border-radius:10px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;text-align:center;padding:10px;}
+  .proto-actions{display:flex;flex-wrap:wrap;gap:8px;padding:0 16px 16px;}
+  .proto-actions button{border:none;border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:700;cursor:pointer;}
+  .btn-dl-proto{background:#111827;color:#fff;}
+  .btn-dl-img{background:#fff;color:#111827;border:1px solid var(--border) !important;}
+  .download-all-wrap{display:flex;justify-content:flex-end;margin-bottom:12px;}
+  .download-all-wrap button{background:var(--fr);color:#fff;border:none;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;}
+
+  @media (max-width:760px){
+    .app{flex-direction:column;height:auto;}
+    .sidebar{width:100%;height:auto;max-height:38vh;min-height:220px;border-right:none;border-bottom:1px solid var(--border);}
+    .map-wrap{height:min(56vh, 420px);min-height:300px;}
+    .emergency-banner{left:8px;right:8px;flex-direction:column;align-items:flex-start;gap:8px;padding:10px 12px;}
+    .proto-body{flex-direction:column;}
+    .proto-img, .noimg-placeholder{width:100%;}
+  }
+
+  /* ---------- ITINÉRAIRE (choix Google Maps / Waze) ---------- */
+  .itin-btn{display:inline-block;background:#111827;color:#fff;text-decoration:none;font-size:12.5px;font-weight:700;padding:6px 10px;border-radius:8px;margin-top:6px;border:none;cursor:pointer;}
+  .itin-btn-inline{display:inline-block;background:#111827;color:#fff;text-decoration:none;font-size:12.5px;font-weight:700;padding:6px 10px;border-radius:8px;margin-top:6px;margin-left:6px;border:none;cursor:pointer;}
+  .itin-modal{display:none;position:fixed;inset:0;background:rgba(10,14,20,.55);z-index:5200;align-items:flex-end;justify-content:center;}
+  .itin-modal.open{display:flex;}
+  .itin-sheet{background:#fff;width:100%;max-width:420px;border-radius:18px 18px 0 0;padding:18px 18px 26px;box-shadow:0 -8px 30px rgba(0,0,0,.25);}
+  @media (min-width:760px){ .itin-modal{align-items:center;} .itin-sheet{border-radius:18px;} }
+  .itin-sheet-title{font-size:15px;font-weight:800;color:#111827;margin-bottom:2px;}
+  .itin-sheet-sub{font-size:12.5px;color:var(--muted);margin:0 0 14px;}
+  .itin-choice{width:100%;display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:12px;border:1px solid var(--border);background:#fff;font-size:15px;font-weight:700;color:#111827;cursor:pointer;margin-bottom:10px;}
+  .itin-choice:active{transform:scale(.98);}
+  .itin-choice-google{border-color:#c7d9fb;background:#f3f7ff;}
+  .itin-choice-waze{border-color:#bfe3ea;background:#eefbfd;}
+  .itin-choice-ico{font-size:22px;}
+  .itin-cancel{width:100%;padding:12px;border-radius:12px;border:none;background:#f1f4f9;color:#374151;font-weight:700;font-size:14px;cursor:pointer;}
+
+  /* ---------- IMAGE ZOOM (visionneuse plein écran) ---------- */
+  .proto-img{position:relative;}
+  .proto-img img{cursor:zoom-in;}
+  .zoom-hint{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);background:rgba(17,24,39,.72);color:#fff;font-size:10.5px;font-weight:600;padding:3px 9px;border-radius:20px;pointer-events:none;white-space:nowrap;}
+  .img-modal{
+    display:none;position:fixed;inset:0;background:rgba(10,14,20,.94);z-index:5000;
+    flex-direction:column;
+  }
+  .img-modal.open{display:flex;}
+  .img-modal-topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;color:#fff;flex-shrink:0;}
+  .img-modal-title{font-size:14px;font-weight:700;}
+  .img-modal-btn{background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.25);width:40px;height:40px;border-radius:50%;font-size:18px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+  .img-modal-btn:hover{background:rgba(255,255,255,.25);}
+  .img-modal-viewport{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;touch-action:pan-x pan-y pinch-zoom;-webkit-overflow-scrolling:touch;}
+  .img-modal-viewport img{
+    max-width:96vw;max-height:82vh;object-fit:contain;border-radius:8px;
+    transition:transform .15s ease-out;transform-origin:center center;cursor:zoom-in;
+    box-shadow:0 10px 40px rgba(0,0,0,.5);
+  }
+  .img-modal-controls{display:flex;justify-content:center;gap:14px;padding:14px 0 22px;flex-shrink:0;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Aaron — Centres & Protocoles</h1>
+  <div class="tabs">
+    <button class="tab-btn active" data-view="centres" onclick="setView('centres')">🗺️ Centres</button>
+    <button class="tab-btn" data-view="protocols" onclick="setView('protocols')">🩹 Protocoles</button>
+  </div>
+</div>
+
+<!-- ================= CENTRES VIEW ================= -->
+<div class="view active" id="view-centres">
+  <div class="app">
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <img src="assets/img/mascot.svg" alt="" class="mascot-illustration" aria-hidden="true">
+        <p>Centres hémophilie / troubles hémorragiques — France & Tunisie. Coordonnées modifiables si un numéro manque.</p>
+      </div>
+      <div class="search-box"><input type="text" id="searchInput" placeholder="Rechercher une ville, un hôpital..."></div>
+      <button class="locate-btn" onclick="locateMe()">📍 Trouver le centre le plus proche</button>
+      <div class="locate-status" id="locateStatus"></div>
+      <div class="filters">
+        <div class="filter-btn active" data-f="all" onclick="setFilter('all')">Tous</div>
+        <div class="filter-btn" data-f="FR" onclick="setFilter('FR')">France</div>
+        <div class="filter-btn" data-f="TN" onclick="setFilter('TN')">Tunisie</div>
+      </div>
+      <div class="list" id="list"></div>
+    </div>
+    <div class="map-wrap">
+      <div id="map"></div>
+      <div class="emergency-banner">
+        <div style="flex:1"><b>En cas d'urgence hémorragique</b>Contactez toujours en premier le centre référent, ou les urgences les plus proches.</div>
+        <div class="nums">
+          <div class="num">15 / 112<small>SAMU France</small></div>
+          <div class="num">190<small>SAMU Tunisie</small></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= PROTOCOLS VIEW ================= -->
+<div class="view" id="view-protocols">
+  <div class="protocols-wrap">
+    <div class="proto-hero">
+      <img src="assets/img/mascot.svg" alt="Illustration d'un adulte bienveillant avec un enfant" class="mascot-illustration">
+      <div>
+        <h2>Protocoles d'urgence — Aaron</h2>
+        <p>Des gestes simples, rassurants, à suivre pas à pas. Chaque carte reprend les instructions officielles avec son illustration.</p>
+      </div>
+    </div>
+    <div class="quickcall">
+      <h3>📞 Contacts rapides</h3>
+      <div class="grouplabel">Parents</div>
+      <div class="group" id="parentsCalls"></div>
+      <div class="grouplabel">CRC-MHC (centre référent)</div>
+      <div class="group" id="crcmhcCalls"></div>
+    </div>
+    <div class="download-all-wrap"><button onclick="downloadAllPDF()">📥 Télécharger tous les protocoles (PDF)</button></div>
+    <div id="protoList"></div>
+  </div>
+</div>
+
+<!-- ================= CHOIX ITINÉRAIRE (Google Maps / Waze) ================= -->
+<div class="itin-modal" id="itineraryModal" onclick="closeItineraryModal(event)">
+  <div class="itin-sheet">
+    <div class="itin-sheet-title" id="itineraryTitle">Itinéraire</div>
+    <p class="itin-sheet-sub">Choisissez votre application de navigation :</p>
+    <button class="itin-choice itin-choice-google" onclick="launchItinerary('google')">
+      <span class="itin-choice-ico">🗺️</span> Google Maps
+    </button>
+    <button class="itin-choice itin-choice-waze" onclick="launchItinerary('waze')">
+      <span class="itin-choice-ico">🚗</span> Waze
+    </button>
+    <button class="itin-cancel" onclick="closeItineraryModal()">Annuler</button>
+  </div>
+</div>
+
+<!-- ================= VISIONNEUSE IMAGE (zoom plein écran) ================= -->
+<div class="img-modal" id="imgModal" onclick="closeImgModal(event)">
+  <div class="img-modal-topbar">
+    <span id="imgModalTitle" class="img-modal-title"></span>
+    <button class="img-modal-btn img-modal-close" onclick="closeImgModal(event)" aria-label="Fermer">✕</button>
+  </div>
+  <div class="img-modal-viewport" id="imgModalViewport">
+    <img id="imgModalImg" src="" alt="" draggable="false">
+  </div>
+  <div class="img-modal-controls" onclick="event.stopPropagation()">
+    <button class="img-modal-btn" onclick="zoomImg(0.75)" aria-label="Réduire">－</button>
+    <button class="img-modal-btn" onclick="resetZoomImg()" aria-label="Réinitialiser le zoom">↺</button>
+    <button class="img-modal-btn" onclick="zoomImg(1.35)" aria-label="Agrandir">＋</button>
+  </div>
+</div>
+
+<script>
+const centers = [{"country": "FR", "city": "Amiens", "name": "CHU Amiens — Centre Régional de Traitement de l'Hémophilie", "address": "1 rond-point du Pr Christian Cabrol, 80054 Amiens", "phone": "", "email": "voyer.annelise@chu-amiens.fr", "contact": "Dr Annelise Voyer", "lat": 49.8942, "lng": 2.2957}, {"country": "FR", "city": "Annecy", "name": "CH Annecy Genevois — Hématologie Clinique", "address": "1 Avenue de l'Hôpital, 74370 Metz-Tessy", "phone": "", "email": "creynes@ch-annecygenevois.fr", "contact": "Dr Claire Reynes", "lat": 45.9397, "lng": 6.108}, {"country": "FR", "city": "Besançon", "name": "CHU Besançon — Hôpital Jean Minjoz — Consultation d'Hémostase", "address": "1 boulevard Alexandre Fleming, 25020 Besançon Cedex", "phone": "", "email": "gmourey@chu-besancon.fr", "contact": "Dr Guillaume Mourey", "lat": 47.2494, "lng": 6.0243}, {"country": "FR", "city": "Bordeaux", "name": "CHU Bordeaux — Hôpital Pellegrin — CRC-MHC", "address": "Place Amélie Raba-Léon, 33076 Bordeaux Cedex", "phone": "", "email": "sabine-marie.castet@chu-bordeaux.fr", "contact": "Dr Sabine Castet", "lat": 44.8354, "lng": -0.6067}, {"country": "FR", "city": "Brest", "name": "CHRU Brest — Hôpital Morvan — CRC-MHC (site coordonnateur national)", "address": "Service d'Hématologie, 29609 Brest Cedex", "phone": "02 98 22 36 50", "urgAdulte": "02 98 22 33 33", "urgPed": "02 98 22 34 88", "email": "brigitte.pan-petesch@chu-brest.fr", "contact": "Dr Brigitte Pan Petesch", "lat": 48.4142, "lng": -4.4791}, {"country": "FR", "city": "Caen", "name": "CHU Caen — Hôpital Côte de Nacre — Laboratoire d'Hématologie", "address": "Avenue de la Côte de Nacre, 14033 Caen Cedex 9", "phone": "", "email": "repesse-y@chu-caen.fr", "contact": "Dr Yohann Repessé", "lat": 49.21, "lng": -0.3745}, {"country": "FR", "city": "Chambéry", "name": "CH Métropole Savoie — Centre de traitement de l'Hémophilie", "address": "Place Lucien Biset, BP 31125, 73011 Chambéry", "phone": "", "email": "valerie.gay@ch-metropole-savoie.fr", "contact": "Dr Valérie Gay", "lat": 45.5646, "lng": 5.9178}, {"country": "FR", "city": "Clermont-Ferrand", "name": "CHU Estaing — CRTH Auvergne — Service de Pédiatrie", "address": "Place Lucie Aubrac, 63000 Clermont-Ferrand", "phone": "", "email": "alebreton@chu-clermontferrand.fr", "contact": "Dr Aurélien Lebreton", "lat": 45.7708, "lng": 3.1128}, {"country": "FR", "city": "Dijon", "name": "CHU Dijon Bourgogne — Hôpital François Mitterrand — Centre de Coagulopathie", "address": "14 rue Paul Gaffarel, BP 77908, 21079 Dijon Cedex", "phone": "", "email": "fabienne.volot@chu-dijon.fr", "contact": "Dr Fabienne Genre Volot", "lat": 47.322, "lng": 5.0415}, {"country": "FR", "city": "Grenoble", "name": "CHU Grenoble Alpes — Institut de Biologie et de Pathologie", "address": "38700 La Tronche", "phone": "", "email": "RMarlu@chu-grenoble.fr", "contact": "Dr Raphaël Marlu", "lat": 45.201, "lng": 5.746}, {"country": "FR", "city": "Fort-de-France (Martinique)", "name": "CHU La Meynard — Centre Régional de Traitement de l'Hémophilie", "address": "Niveau 4ème, aile D, 97200 Fort-de-France", "phone": "", "email": "Beatrice.FERREY@chu-martinique.fr", "contact": "Dr Béatrice Ferrey", "lat": 14.6161, "lng": -61.0588, "note": "Hors zone France métropolitaine / Tunisie — à afficher en liste uniquement, pas sur la carte principale"}, {"country": "FR", "city": "Saint-Denis (La Réunion)", "name": "CHU Félix Guyon", "address": "Allée des Topazes, CS 11021, 97400 Saint-Denis", "phone": "", "email": "stephane.vanderbecken@chu-reunion.fr", "contact": "Dr Stéphane Vanderbecken", "lat": -20.8823, "lng": 55.4504, "note": "Hors zone France métropolitaine / Tunisie — à afficher en liste uniquement, pas sur la carte principale"}, {"country": "FR", "city": "Le Mans", "name": "Centre Hospitalier du Mans — Laboratoire d'analyses médicales", "address": "194 avenue Rubillard, 72037 Le Mans Cedex", "phone": "", "email": "jrose@ch-lemans.fr", "contact": "Dr Johann Rose", "lat": 48.0061, "lng": 0.2044}, {"country": "FR", "city": "Lille", "name": "CHRU Lille — Institut Cœur Poumons — Centre de Traitement de l'Hémophilie", "address": "4ème étage aile Est, 59037 Lille Cedex", "phone": "", "email": "sophie.susen@chru-lille.fr", "contact": "Pr Sophie Susen", "lat": 50.6292, "lng": 3.0573}, {"country": "FR", "city": "Limoges", "name": "CHU Limoges — Hôpital Mère-Enfant — Hématologie/Oncologie Pédiatrique", "address": "8 rue Dominique Larrey, 87042 Limoges Cedex", "phone": "", "email": "Thomas.LAUVRAY@chu-limoges.fr", "contact": "Dr Thomas Lauvray", "lat": 45.8336, "lng": 1.2611}, {"country": "FR", "city": "Lyon (Bron)", "name": "Hospices Civils de Lyon — Hôpital Louis Pradel — CRTH", "address": "59 boulevard Pinel, 69677 Bron Cedex", "phone": "", "email": "gamze.dargaud@chu-lyon.fr", "contact": "Pr Yesim Dargaud", "lat": 45.737, "lng": 4.9375}, {"country": "FR", "city": "Marseille", "name": "CHRU La Timone — Hématologie et Oncologie Pédiatrique — CRTH", "address": "254 rue Saint-Pierre, 13385 Marseille Cedex", "phone": "", "email": "herve.chambost@ap-hm.fr", "contact": "Pr Hervé Chambost", "lat": 43.2836, "lng": 5.4066}, {"country": "FR", "city": "Montpellier", "name": "Hôpital Saint-Eloi — CRC-MHC", "address": "80 avenue Augustin Fliche, 34295 Montpellier Cedex 5", "phone": "04 67 33 77 71", "email": "c-biron@chu-montpellier.fr", "contact": "Dr Christine Biron Andréani", "lat": 43.6289, "lng": 3.8534}, {"country": "FR", "city": "Nancy (Vandœuvre)", "name": "Hôpital de Brabois — Laboratoire d'Hémostase", "address": "Rue du Morvan, 54511 Vandœuvre-lès-Nancy", "phone": "", "email": "b.frotscher@chru-nancy.fr", "contact": "Dr Birgit Frotscher", "lat": 48.656, "lng": 6.159}, {"country": "FR", "city": "Nantes", "name": "CHU Hôtel-Dieu — CRTH", "address": "1 Place Alexis Ricordeau, 44093 Nantes Cedex 1", "phone": "", "email": "marc.trossaert@chu-nantes.fr", "contact": "Dr Marc Trossaert", "lat": 47.2103, "lng": -1.5464}, {"country": "FR", "city": "Nice", "name": "Hôpital l'Archet — Service de Médecine Interne", "address": "BP 3079, 06202 Nice Cedex 3", "phone": "", "email": "rohrlich.ps@chu-nice.fr", "contact": "Pr Pierre Rohrlich", "lat": 43.7185, "lng": 7.2707}, {"country": "FR", "city": "Paris (Le Kremlin-Bicêtre)", "name": "CHU de Bicêtre — Centre de Traitement de l'Hémophilie", "address": "78 rue du Général Leclerc, 94270 Le Kremlin-Bicêtre", "phone": "", "email": "roseline.doiron@aphp.fr", "contact": "Dr Roseline D'Oiron", "lat": 48.8092, "lng": 2.3592}, {"country": "FR", "city": "Paris (Le Chesnay / Versailles)", "name": "CH de Versailles — Hôpital André Mignot", "address": "177 rue de Versailles, 78157 Le Chesnay", "phone": "01 39 63 87 45", "email": "ndegunzburg@ch-versailles.fr", "contact": "Dr Noémie de Gunzburg", "lat": 48.8092, "lng": 2.1332}, {"country": "FR", "city": "Paris (Eaubonne)", "name": "Hôpital Simone Veil — Groupe Hospitalier Eaubonne-Montmorency", "address": "14 rue Saint-Prix, 95600 Eaubonne", "phone": "01 34 06 61 90", "urgence": "01 34 06 60 00 (7j/7, 24h/24)", "email": "abel.hassoun@ch-simoneveil.fr", "contact": "Dr Abel Hassoun", "lat": 48.9847, "lng": 2.2843}, {"country": "FR", "city": "Paris", "name": "Hôpital Cochin — Centre d'accueil et de traitement des hémophiles", "address": "27 rue du Faubourg Saint-Jacques, 75014 Paris", "phone": "", "email": "", "contact": "", "lat": 48.836, "lng": 2.3364}, {"country": "FR", "city": "Paris", "name": "Hôpital Necker — Centre des hémophiles Carré Necker", "address": "149 rue de Sèvres, 75015 Paris", "phone": "", "email": "annie.harroche@aphp.fr", "contact": "Dr Annie Harroche", "lat": 48.8453, "lng": 2.3153}, {"country": "FR", "city": "Poitiers", "name": "CHU Poitiers — Hôpital Jean Bernard — Laboratoire d'Hématologie", "address": "BP 577, 86021 Poitiers Cedex", "phone": "", "email": "laurent.macchi@chu-poitiers.fr", "contact": "Pr Laurent Macchi", "lat": 46.5769, "lng": 0.3568}, {"country": "FR", "city": "Reims", "name": "CHU Reims — Hôpital Maison Blanche — CRTH", "address": "45 rue Cognacq Jay, 51092 Reims", "phone": "", "email": "pnguyen@chu-reims.fr", "contact": "Pr Philippe Nguyen", "lat": 49.2478, "lng": 4.0364}, {"country": "FR", "city": "Rennes", "name": "CHU Rennes — Hôpital Pontchaillou — Hémostase Bio-Clinique", "address": "2 rue Henri Le Guilloux, 35033 Rennes Cedex 09", "phone": "02 99 28 24 10", "email": "benoit.guillet@chu-rennes.fr", "contact": "Dr Benoit Guillet", "lat": 48.1215, "lng": -1.6743}, {"country": "FR", "city": "Rouen", "name": "CHU Rouen — Institut de Biologie Clinique — CRTH", "address": "1 rue de Germont, 76031 Rouen", "phone": "", "email": "pierre.chamouni@chu-rouen.fr", "contact": "Dr Pierre Chamouni", "lat": 49.4472, "lng": 1.0827}, {"country": "FR", "city": "Saint-Étienne", "name": "CHRU Saint-Étienne — Hôpital Nord — Service de Pédiatrie", "address": "42055 Saint-Étienne Cedex 2", "phone": "", "email": "claire.berger@chu-st-etienne.fr", "contact": "Dr Claire Berger", "lat": 45.4614, "lng": 4.3822}, {"country": "FR", "city": "Strasbourg", "name": "CHU Hautepierre — Centre de traitement de l'Hémophilie", "address": "Avenue Molière, 67200 Strasbourg", "phone": "", "email": "dominique.desprez@chru-strasbourg.fr", "contact": "Dr Dominique Desprez", "lat": 48.6034, "lng": 7.7098}, {"country": "FR", "city": "Toulouse", "name": "CHU Toulouse — Hôpital Purpan — Centre Régional de l'Hémophilie", "address": "Place du Docteur Baylac, 31059 Toulouse Cedex 9", "phone": "", "email": "voisin.s@chu-toulouse.fr", "contact": "Dr Sophie Voisin", "lat": 43.6146, "lng": 1.4066}, {"country": "FR", "city": "Tours", "name": "CHU Tours — Hôpital Trousseau — Centre Régional de Traitement de l'Hémophilie", "address": "37044 Tours Cedex 9", "phone": "", "email": "l.ardillon@chu-tours.fr", "contact": "Dr Laurent Ardillon", "lat": 47.39, "lng": 0.6971}, {"country": "TN", "city": "Tunis", "name": "Hôpital Aziza Othmana — Centre de Traitement des Hémophiles (centre national de référence)", "address": "Place de la Kasbah, Bab Menara, 1008 Tunis", "phone": "", "email": "", "contact": "Pr Emna Gouider — Service d'Hématologie", "note": "Principal centre de référence pour le nord du pays", "lat": 36.7994, "lng": 10.1655}, {"country": "TN", "city": "Sousse", "name": "Hôpital Universitaire Farhat Hached — Service d'Hématologie", "address": "Avenue Ibn Jazzar, 4000 Sousse", "phone": "", "email": "", "contact": "", "note": "Centre de référence pour le centre du pays", "lat": 35.8256, "lng": 10.6084}, {"country": "TN", "city": "Sfax", "name": "Hôpital Universitaire Hédi Chaker — Service d'Hématologie", "address": "Route El Ain Km 0.5, 3029 Sfax", "phone": "", "email": "", "contact": "", "note": "Centre de référence pour le sud du pays", "lat": 34.7398, "lng": 10.7276}, {"country": "TN", "city": "Gafsa", "name": "Hôpital Régional de Gafsa", "address": "Gafsa", "phone": "", "email": "", "contact": "", "note": "Centre satellite / antenne régionale (coordonnées à confirmer directement avec l'hôpital)", "lat": 34.425, "lng": 8.7842}, {"country": "TN", "city": "Djerba", "name": "Hôpital de Djerba", "address": "Djerba", "phone": "", "email": "", "contact": "", "note": "Centre satellite / antenne régionale (coordonnées à confirmer directement avec l'hôpital)", "lat": 33.8076, "lng": 10.8451}, {"country": "TN", "city": "Monastir", "name": "Hôpital Fattouma Bourguiba", "address": "Monastir", "phone": "", "email": "", "contact": "", "note": "Centre satellite / antenne régionale (coordonnées à confirmer directement avec l'hôpital)", "lat": 35.7847, "lng": 10.8262}];
+const protocolsMeta = [{"id": "coupure", "title": "Coupure ou plaie cutanée superficielle", "color": "#e7f3fb", "accent": "#2563eb", "urgent": false, "steps": ["Désinfecter avec un produit sans alcool.", "Appliquer une compresse imbibée d'EXACYL et comprimer pendant 10 minutes.", "Si le saignement ne cesse pas : appeler les parents qui préviendront le CRC-MHC (tél. 05 61 77 68 03 ou 68 18), et donner EXACYL."]}, {"id": "suture", "title": "Plaie plus importante nécessitant des points de suture", "color": "#e8f6ec", "accent": "#15803d", "urgent": false, "steps": ["Exercer une pression locale avec une compresse imbibée d'EXACYL pendant 10 minutes.", "Appeler les parents qui préviendront le CRC-MHC (05 61 77 68 18) et qui conduiront l'enfant à l'hôpital."]}, {"id": "nez", "title": "Saignement de nez", "color": "#fdf6d8", "accent": "#b45309", "urgent": false, "steps": ["Rassurer l'enfant.", "Le mettre dans un endroit frais.", "L'asseoir en maintenant sa tête droite (pas en arrière).", "Moucher l'enfant puis comprimer la narine qui saigne durant 10 minutes.", "Placer de la glace sur la nuque, lui faire sucer de la glace ou quelque chose de froid.", "Appeler les parents qui débuteront le traitement.", "Si le saignement persiste : mettre en place un méchage, imbiber la mèche avec de l'EXACYL.", "Donner EXACYL, traitement qui sera continué par les parents.", "S'il n'y a pas d'arrêt du saignement : appeler le CRC-MHC pour avis (05 61 77 68 03 ou 68 18)."]}, {"id": "bouche", "title": "Plaie dans la bouche", "color": "#e2f5f4", "accent": "#0e7490", "urgent": false, "steps": ["Rincer la bouche à l'eau glacée.", "Faire sucer de la glace.", "Essayer de comprimer la plaie avec une compresse imbibée d'EXACYL pendant 10 minutes.", "Manger semi-liquide et boire froid.", "Si le saignement persiste : appeler les parents et donner EXACYL."]}, {"id": "bosse", "title": "Bosse sur le front", "color": "#f1eaf9", "accent": "#7e22ce", "urgent": false, "steps": ["Comprimer fortement pendant 10 minutes avec de la glace ou une poche froide.", "Donner une dose d'ARNICA 9CH, suivie de 3 granules d'ARNICA 9CH toutes les heures.", "Faire un pansement compressif avec de l'ARNICA (pommade).", "Si le volume de la bosse augmente : prévenir les parents qui préviendront le CRC-MHC, et donner EXACYL."]}, {"id": "hemarthrose", "title": "Hémarthrose ou hématome", "subtitle": "Hémarthrose = saignement dans une articulation (mobilité douloureuse voire impossible, puis gonflement). Hématome = saignement dans un muscle.", "color": "#e3f4ec", "accent": "#0f766e", "urgent": false, "steps": ["Immobiliser le membre.", "Appliquer de la glace (type CRYOGEL).", "Donner un antalgique de type DOLIPRANE ou EFFERALGAN.", "Prévenir les parents qui préviendront le CRC-MHC pour discuter de la prise en charge (05 61 77 68 03 ou 68 18)."]}, {"id": "migraine", "title": "Migraines violentes ou douleurs aiguës", "color": "#e3edfb", "accent": "#1d4ed8", "urgent": true, "steps": ["Appel des parents et du SAMU pour un transfert à l'hôpital en urgence.", "Injection de facteurs de coagulation à discuter à son arrivée, selon le tableau clinique.", "Appeler le CRC-MHC pour discuter de la prise en charge (05 61 77 68 03 ou 68 18)."]}, {"id": "choc", "title": "Choc violent sur la tête, le thorax ou l'abdomen", "color": "#fbebd9", "accent": "#c2410c", "urgent": true, "steps": ["Appel des parents et du SAMU pour un transfert à l'hôpital en urgence.", "Injection des facteurs de coagulation à discuter à son arrivée, selon le tableau clinique.", "Appeler le CRC-MHC pour discuter de la prise en charge (05 61 77 68 03 ou 68 18)."]}];
+const protoImageFile = {
+  coupure: 'assets/img/cas1.jpg',
+  suture: 'assets/img/cas2.jpg',
+  nez: 'assets/img/cas3.jpg',
+  bouche: 'assets/img/cas4.jpg',
+  bosse: 'assets/img/cas5.jpg',
+  hemarthrose: 'assets/img/cas6.jpg',
+  migraine: 'assets/img/cas7.jpg',
+  choc: 'assets/img/cas8.jpg'
+};
+// cache des images converties en dataURL, nécessaire pour les insérer dans les PDF jsPDF
+const protoImageDataUrlCache = {};
+function loadImageAsDataUrl(url){
+  if(protoImageDataUrlCache[url]) return Promise.resolve(protoImageDataUrlCache[url]);
+  return fetch(url)
+    .then(r => r.blob())
+    .then(blob => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => { protoImageDataUrlCache[url] = reader.result; resolve(reader.result); };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    }));
+}
+const parents = [{"label": "Parent 1", "phone": "07 52 83 78 06"}, {"label": "Parent 2", "phone": "06 95 76 52 34"}];
+const crcmhc = [{"label": "CRC-MHC (ligne 1)", "phone": "05 61 77 68 03"}, {"label": "CRC-MHC (ligne 2)", "phone": "05 61 77 68 18"}];
+
+function telHref(phone){ return "tel:" + phone.replace(/[\s.]/g,""); }
+
+/* ---------- View switching ---------- */
+function setView(v){
+  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+  document.getElementById('view-' + v).classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.view === v));
+  if(v === 'centres'){ setTimeout(() => map.invalidateSize(), 50); }
+}
+
+/* ---------- Overrides storage (edit missing info) ---------- */
+function loadOverrides(){
+  try{
+    const raw = localStorage.getItem('centre_overrides');
+    return raw ? JSON.parse(raw) : {};
+  }catch(e){ return {}; }
+}
+function saveOverrides(o){
+  try{ localStorage.setItem('centre_overrides', JSON.stringify(o)); }catch(e){}
+}
+let overrides = loadOverrides();
+
+function effectiveCenter(i){
+  const base = centers[i];
+  const ov = overrides[i] || {};
+  return Object.assign({}, base, ov);
+}
+
+/* ---------- Map ---------- */
+const map = L.map('map', {zoomControl:true}).setView([42.5, 5], 5);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom:19, attribution:'© OpenStreetMap contributors'
+}).addTo(map);
+
+// Fiabilise le rendu de la carte sur mobile : Leaflet a besoin d'être notifié
+// explicitement si la taille de son conteneur change après l'initialisation
+// (barre d'adresse mobile qui se replie, rotation d'écran, etc.)
+window.addEventListener('load', () => setTimeout(() => map.invalidateSize(), 200));
+setTimeout(() => map.invalidateSize(), 400);
+setTimeout(() => map.invalidateSize(), 1000);
+window.addEventListener('resize', () => map.invalidateSize());
+window.addEventListener('orientationchange', () => setTimeout(() => map.invalidateSize(), 300));
+
+function makeIcon(color, big){
+  const size = big ? 22 : 16;
+  return L.divIcon({
+    className:'',
+    html:`<div style="width:${size}px;height:${size}px;border-radius:50% 50% 50% 0;background:${color};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);transform:rotate(-45deg);"></div>`,
+    iconSize:[size,size], iconAnchor:[size/2,size], popupAnchor:[0,-size]
+  });
+}
+const iconFR = makeIcon('#2563eb'); const iconTN = makeIcon('#dc2626'); const iconNear = makeIcon('#16a34a', true);
+
+const markers = [];
+let nearestIdx = null;
+let userMarker = null;
+let userPos = null; // { lat, lng } — dernière position connue de l'utilisateur (bouton "Trouver le centre le plus proche")
+
+function popupHtml(c){
+  let h = `<div class="popup-title">${c.name}</div>`;
+  h += `<div class="popup-sub">${c.city}, ${c.country === 'FR' ? 'France' : 'Tunisie'}</div>`;
+  h += `<div class="popup-body">📍 ${c.address}<br>`;
+  if(c.contact) h += `👤 ${c.contact}<br>`;
+  if(c.phone) h += `📞 <a href="${telHref(c.phone)}">${c.phone}</a><br>`;
+  if(c.urgAdulte) h += `🚑 Urgence adulte : ${c.urgAdulte}<br>`;
+  if(c.urgPed) h += `🚑 Urgence pédiatrique : ${c.urgPed}<br>`;
+  if(c.urgence) h += `🚑 Urgence : ${c.urgence}<br>`;
+  if(c.email) h += `✉️ <a href="mailto:${c.email}">${c.email}</a><br>`;
+  if(c.note) h += `<i style="color:#6b7280">${c.note}</i>`;
+  h += `</div>`;
+  h += `<button class="itin-btn" onclick="openItineraryChoice(${c.lat}, ${c.lng}, '${escJs(c.name)}')">🧭 Itinéraire</button>`;
+  return h;
+}
+function escJs(s){ return String(s || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+
+centers.forEach((c, i) => {
+  const marker = L.marker([c.lat, c.lng], {icon: c.country === 'FR' ? iconFR : iconTN});
+  marker.idx = i;
+  marker.addTo(map).bindPopup(popupHtml(effectiveCenter(i)));
+  markers.push(marker);
+  marker.on('click', () => { selectedIdx = i; renderList(document.getElementById('searchInput').value); });
+});
+
+/* ---------- Geolocation: find nearest ---------- */
+function haversine(lat1, lon1, lat2, lon2){
+  const R = 6371;
+  const dLat = (lat2-lat1) * Math.PI/180;
+  const dLon = (lon2-lon1) * Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function locateMe(){
+  const status = document.getElementById('locateStatus');
+  if(!navigator.geolocation){ status.textContent = "Géolocalisation non disponible sur cet appareil/navigateur."; return; }
+  status.textContent = "Localisation en cours...";
+  navigator.geolocation.getCurrentPosition(pos => {
+    const {latitude, longitude} = pos.coords;
+    userPos = {lat: latitude, lng: longitude};
+    let best = -1, bestDist = Infinity;
+    centers.forEach((c, i) => {
+      const d = haversine(latitude, longitude, c.lat, c.lng);
+      if(d < bestDist){ bestDist = d; best = i; }
+    });
+    nearestIdx = best;
+    markers.forEach((m,i) => m.setIcon(i === best ? iconNear : (centers[i].country === 'FR' ? iconFR : iconTN)));
+    if(userMarker) map.removeLayer(userMarker);
+    userMarker = L.circleMarker([latitude, longitude], {radius:8, color:'#111827', fillColor:'#fbbf24', fillOpacity:1, weight:2}).addTo(map).bindPopup("Votre position");
+    status.textContent = `Centre le plus proche : ${centers[best].name} (${bestDist.toFixed(0)} km à vol d'oiseau).`;
+    map.flyTo([centers[best].lat, centers[best].lng], 9, {duration:0.8});
+    markers[best].openPopup();
+    selectedIdx = best;
+    renderList(document.getElementById('searchInput').value);
+  }, err => {
+    status.textContent = "Impossible d'obtenir votre position (" + err.message + "). Vérifiez les autorisations de localisation.";
+  }, {enableHighAccuracy:true, timeout:10000});
+}
+
+/* ---------- List rendering ---------- */
+let currentFilter = 'all';
+let selectedIdx = null;
+
+function editFormHtml(i, c){
+  return `
+  <div class="edit-form" id="editform-${i}">
+    <label>Téléphone</label>
+    <input type="tel" id="edit-phone-${i}" value="${c.phone || ''}" placeholder="Ex : 05 61 00 00 00">
+    <label>Email</label>
+    <input type="email" id="edit-email-${i}" value="${c.email || ''}" placeholder="Ex : contact@chu.fr">
+    <label>Contact / référent</label>
+    <input type="text" id="edit-contact-${i}" value="${c.contact || ''}" placeholder="Ex : Dr Nom">
+    <div class="edit-actions">
+      <button class="btn-save" onclick="saveEdit(${i})">💾 Enregistrer</button>
+      <button class="btn-cancel" onclick="toggleEdit(${i}, false)">Annuler</button>
+      <button class="btn-reset" onclick="resetEdit(${i})">↩︎ Réinitialiser</button>
+    </div>
+  </div>`;
+}
+
+function toggleEdit(i, forceOpen){
+  const el = document.getElementById('editform-' + i);
+  if(!el) return;
+  const show = forceOpen !== undefined ? forceOpen : el.style.display === 'none';
+  el.style.display = show ? 'block' : 'none';
+}
+
+function saveEdit(i){
+  const phone = document.getElementById('edit-phone-'+i).value.trim();
+  const email = document.getElementById('edit-email-'+i).value.trim();
+  const contact = document.getElementById('edit-contact-'+i).value.trim();
+  overrides[i] = overrides[i] || {};
+  if(phone) overrides[i].phone = phone; else delete overrides[i].phone;
+  if(email) overrides[i].email = email; else delete overrides[i].email;
+  if(contact) overrides[i].contact = contact; else delete overrides[i].contact;
+  if(Object.keys(overrides[i]).length === 0) delete overrides[i];
+  saveOverrides(overrides);
+  markers[i].setPopupContent(popupHtml(effectiveCenter(i)));
+  renderList(document.getElementById('searchInput').value);
+}
+
+function resetEdit(i){
+  delete overrides[i];
+  saveOverrides(overrides);
+  markers[i].setPopupContent(popupHtml(effectiveCenter(i)));
+  renderList(document.getElementById('searchInput').value);
+}
+
+function cardHtml(c, i){
+  const isNearest = i === nearestIdx;
+  let detail = `<div class="row"><span class="ico">📍</span><span>${c.address}</span></div>`;
+  if(c.contact) detail += `<div class="row"><span class="ico">👤</span><span>${c.contact}</span></div>`;
+  if(c.phone) detail += `<div class="row"><span class="ico">📞</span><span>${c.phone}</span></div>`;
+  if(c.urgAdulte) detail += `<div class="row"><span class="ico">🚑</span><span>Urgence adulte : ${c.urgAdulte}</span></div>`;
+  if(c.urgPed) detail += `<div class="row"><span class="ico">🚑</span><span>Urgence pédiatrique : ${c.urgPed}</span></div>`;
+  if(c.urgence) detail += `<div class="row"><span class="ico">🚑</span><span>Urgence : ${c.urgence}</span></div>`;
+  if(c.email) detail += `<div class="row"><span class="ico">✉️</span><span>${c.email}</span></div>`;
+  if(!c.phone && !c.email && !c.contact){ detail += `<span class="badge">Coordonnées à compléter</span>`; }
+  else if(c.note && c.note.indexOf('à confirmer') > -1){ detail += `<span class="badge">${c.note}</span>`; }
+
+  if(c.phone) detail += `<div><a class="call-btn" href="${telHref(c.phone)}">📞 Appeler</a><button class="itin-btn-inline" onclick="event.stopPropagation();openItineraryChoice(${c.lat}, ${c.lng}, '${escJs(c.name)}')">🧭 Itinéraire</button></div>`;
+  else detail += `<div><button class="itin-btn-inline" onclick="event.stopPropagation();openItineraryChoice(${c.lat}, ${c.lng}, '${escJs(c.name)}')">🧭 Itinéraire</button></div>`;
+  detail += `<div><button class="edit-btn" onclick="event.stopPropagation();toggleEdit(${i})">✏️ Compléter / modifier les coordonnées</button></div>`;
+  detail += editFormHtml(i, c);
+
+  return `
+  <div class="card ${isNearest ? 'nearest' : ''}" data-idx="${i}" onclick="selectCenter(${i})">
+    <div class="card-top">
+      <div class="flag-dot ${c.country}"></div>
+      <div>
+        <div class="card-title">${c.name}</div>
+        <div class="card-sub">${c.city}</div>
+        ${isNearest ? '<div class="nearest-badge">⭐ LE PLUS PROCHE</div>' : ''}
+      </div>
+    </div>
+    <div class="card-detail">${detail}</div>
+  </div>`;
+}
+
+function renderList(filterText){
+  const list = document.getElementById('list');
+  const q = (filterText || '').toLowerCase();
+  let html = '';
+  const groups = [{key:'FR', label:'France'}, {key:'TN', label:'Tunisie'}];
+  groups.forEach(g => {
+    if(currentFilter !== 'all' && currentFilter !== g.key) return;
+    const items = centers.map((c,i)=>({c: effectiveCenter(i), i}))
+      .filter(({c}) => c.country === g.key)
+      .filter(({c}) => !q || (c.name+c.city+c.address).toLowerCase().includes(q));
+    if(items.length === 0) return;
+    html += `<div class="group-title">${g.label} (${items.length})</div>`;
+    items.forEach(({c,i}) => html += cardHtml(c,i));
+  });
+  if(html === '') html = `<div style="padding:20px;color:#9ca3af;text-align:center;font-size:13px;">Aucun résultat</div>`;
+  list.innerHTML = html;
+  if(selectedIdx !== null){
+    const el = list.querySelector(`.card[data-idx="${selectedIdx}"]`);
+    if(el) el.classList.add('selected');
+  }
+}
+
+function selectCenter(i){
+  selectedIdx = i;
+  const c = centers[i];
+  map.flyTo([c.lat, c.lng], 12, {duration:0.6});
+  markers[i].openPopup();
+  renderList(document.getElementById('searchInput').value);
+}
+
+function setFilter(f){
+  currentFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.f === f));
+  renderList(document.getElementById('searchInput').value);
+  markers.forEach((m,i) => {
+    const show = f === 'all' || centers[i].country === f;
+    if(show){ if(!map.hasLayer(m)) m.addTo(map); } else { map.removeLayer(m); }
+  });
+}
+
+document.getElementById('searchInput').addEventListener('input', e => renderList(e.target.value));
+renderList('');
+
+/* ---------- Protocols rendering ---------- */
+function callChipsHtml(list){
+  return list.map(p => `<a href="${telHref(p.phone)}">📞 ${p.label}<br><small style="font-weight:500">${p.phone}</small></a>`).join('');
+}
+document.getElementById('parentsCalls').innerHTML = callChipsHtml(parents);
+document.getElementById('crcmhcCalls').innerHTML = callChipsHtml(crcmhc);
+
+function normalize(s){
+  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+function iconFor(text){
+  const t = normalize(text);
+  const rules = [
+    [/glace|cryogel|froid/, '🧊'],
+    [/exacyl/, '💧'],
+    [/arnica/, '🌿'],
+    [/doliprane|efferalgan|antalgique/, '💊'],
+    [/samu/, '🚑'],
+    [/hopital/, '🏥'],
+    [/immobiliser/, '🦴'],
+    [/rassurer/, '🤗'],
+    [/rincer|eau/, '💧'],
+    [/injection|facteur/, '💉'],
+    [/pansement|compress|pression/, '🩹'],
+    [/appeler|contact|telephone|prevenir/, '📞'],
+    [/manger|boire/, '🥣'],
+  ];
+  for(const [re, ic] of rules){ if(re.test(t)) return ic; }
+  return '▪️';
+}
+function stepsHtml(steps){
+  return steps.map((s, i) => `
+    <div class="step-row">
+      <span class="step-num">${i+1}</span>
+      <span class="step-ico">${iconFor(s)}</span>
+      <span class="step-text">${s}</span>
+    </div>`).join('');
+}
+
+function protoCardHtml(p){
+  const imgFile = protoImageFile[p.id];
+  const img = imgFile ? `<div class="proto-img"><img src="${imgFile}" alt="Illustration : ${p.title}" loading="lazy" onclick="openImgModal('${imgFile}', '${p.title.replace(/'/g,"\\'")}')" tabindex="0" role="button" aria-label="Agrandir l'illustration"><span class="zoom-hint">🔍 Toucher pour agrandir</span></div>`
+                       : `<div class="noimg-placeholder">🖍️<br>Illustration non disponible pour ce cas</div>`;
+  return `
+  <div class="proto-card" style="background:${p.color}">
+    <div class="proto-head">
+      <h2>${p.title}</h2>
+      ${p.urgent ? '<span class="proto-urgent">🚨 URGENCE — SAMU</span>' : ''}
+    </div>
+    ${p.subtitle ? `<div class="proto-sub">${p.subtitle}</div>` : ''}
+    <div class="proto-body">
+      ${img}
+      <div class="proto-steps">${stepsHtml(p.steps)}</div>
+    </div>
+    <div class="proto-actions">
+      <button class="btn-dl-proto" onclick="downloadProtocolPDF('${p.id}')">📥 Télécharger ce protocole (PDF)</button>
+      ${imgFile ? `<button class="btn-dl-img" onclick="downloadImagePDF('${p.id}')">🖼️ Télécharger l'image (PDF)</button>` : ''}
+    </div>
+  </div>`;
+}
+/* ---------- Itinéraire : choix Google Maps / Waze ---------- */
+let itineraryTarget = null;
+
+function openItineraryChoice(lat, lng, name){
+  itineraryTarget = {lat, lng, name};
+  document.getElementById('itineraryTitle').textContent = 'Itinéraire vers : ' + (name || 'le centre');
+  document.getElementById('itineraryModal').classList.add('open');
+}
+
+function closeItineraryModal(evt){
+  // ferme uniquement si clic sur le fond (backdrop) ou sur le bouton Annuler (appelé sans event précis)
+  if(evt && evt.target && evt.target.id !== 'itineraryModal') return;
+  document.getElementById('itineraryModal').classList.remove('open');
+}
+
+function launchItinerary(provider){
+  if(!itineraryTarget) return;
+  const {lat, lng} = itineraryTarget;
+  let url;
+  if(provider === 'google'){
+    const origin = userPos ? `&origin=${userPos.lat},${userPos.lng}` : '';
+    url = `https://www.google.com/maps/dir/?api=1${origin}&destination=${lat},${lng}&travelmode=driving`;
+  } else if(provider === 'waze'){
+    // Waze navigue toujours depuis la position actuelle de l'appareil (pas de paramètre "origine")
+    url = `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
+  }
+  if(url) window.open(url, '_blank', 'noopener');
+  document.getElementById('itineraryModal').classList.remove('open');
+}
+
+/* ---------- Visionneuse image plein écran (zoom) ---------- */
+let imgZoomLevel = 1;
+const IMG_ZOOM_MIN = 1, IMG_ZOOM_MAX = 5;
+
+function openImgModal(src, title){
+  const modal = document.getElementById('imgModal');
+  const img = document.getElementById('imgModalImg');
+  img.src = src;
+  img.alt = title || '';
+  document.getElementById('imgModalTitle').textContent = title || '';
+  imgZoomLevel = 1;
+  img.style.transform = 'scale(1)';
+  modal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeImgModal(evt){
+  // ne ferme pas si on clique sur les contrôles ou sur l'image elle-même en cours de zoom avant (double-tap géré séparément)
+  if(evt && evt.target && (evt.target.closest('.img-modal-controls') )) return;
+  const modal = document.getElementById('imgModal');
+  modal.classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function zoomImg(factor){
+  imgZoomLevel = Math.min(IMG_ZOOM_MAX, Math.max(IMG_ZOOM_MIN, imgZoomLevel * factor));
+  document.getElementById('imgModalImg').style.transform = `scale(${imgZoomLevel})`;
+}
+
+function resetZoomImg(){
+  imgZoomLevel = 1;
+  document.getElementById('imgModalImg').style.transform = 'scale(1)';
+  document.getElementById('imgModalViewport').scrollTo(0,0);
+}
+
+// clic direct sur l'image : zoome, ne ferme pas la visionneuse
+document.getElementById('imgModalImg').addEventListener('click', (e) => {
+  e.stopPropagation();
+  zoomImg(imgZoomLevel < 2 ? 1.6 : (1/imgZoomLevel)); // zoom in, puis un clic de plus réinitialise
+});
+
+// molette de souris = zoom
+document.getElementById('imgModalViewport').addEventListener('wheel', (e) => {
+  if(!document.getElementById('imgModal').classList.contains('open')) return;
+  e.preventDefault();
+  zoomImg(e.deltaY < 0 ? 1.15 : 0.87);
+}, {passive:false});
+
+// touche Échap = fermer
+document.addEventListener('keydown', (e) => {
+  if(e.key === 'Escape') closeImgModal();
+});
+
+document.getElementById('protoList').innerHTML = protocolsMeta.map(protoCardHtml).join('');
+
+/* ---------- PDF generation ---------- */
+function getProtoById(id){ return protocolsMeta.find(p => p.id === id); }
+
+async function buildProtocolPage(doc, p, isFirst){
+  if(!isFirst) doc.addPage('a5','p');
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 10;
+  let y = margin;
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(14);
+  const titleLines = doc.splitTextToSize(p.title, pageW - margin*2);
+  doc.text(titleLines, margin, y+5);
+  y += 5 + titleLines.length*6;
+
+  if(p.urgent){
+    doc.setFillColor(220,38,38);
+    doc.roundedRect(margin, y, 44, 7, 2, 2, 'F');
+    doc.setTextColor(255,255,255); doc.setFontSize(9); doc.setFont('helvetica','bold');
+    doc.text('URGENCE - SAMU', margin+3, y+5);
+    doc.setTextColor(0,0,0);
+    y += 11;
+  }
+
+  if(p.subtitle){
+    doc.setFont('helvetica','italic'); doc.setFontSize(8.5);
+    const subLines = doc.splitTextToSize(p.subtitle, pageW - margin*2);
+    doc.text(subLines, margin, y+4);
+    y += 4 + subLines.length*4.2;
+  }
+
+  const imgFile = protoImageFile[p.id];
+  if(imgFile){
+    try{
+      const dataUrl = await loadImageAsDataUrl(imgFile);
+      const imgW = pageW - margin*2;
+      const maxH = 68;
+      let w = imgW, h = imgW*1.5;
+      if(h > maxH){ h = maxH; w = h/1.5; }
+      doc.addImage(dataUrl, 'JPEG', margin, y, w, h);
+      y += h + 6;
+    }catch(e){ console.warn('Image PDF indisponible (hors-ligne ?) :', e); }
+  }
+
+  doc.setFont('helvetica','normal'); doc.setFontSize(10.5);
+  p.steps.forEach((s, idx) => {
+    const lines = doc.splitTextToSize(`${idx+1}. ${s}`, pageW - margin*2);
+    if(y + lines.length*5 > pageH - 22){
+      doc.addPage('a5','p'); y = margin;
+    }
+    doc.text(lines, margin, y+4);
+    y += lines.length*5 + 2;
+  });
+
+  doc.setDrawColor(200);
+  doc.line(margin, pageH-16, pageW-margin, pageH-16);
+  doc.setFontSize(8); doc.setTextColor(90);
+  doc.text('Parents : ' + parents.map(x=>x.phone).join(' / '), margin, pageH-11);
+  doc.text('CRC-MHC : ' + crcmhc.map(x=>x.phone).join(' / '), margin, pageH-6);
+  doc.setTextColor(0);
+}
+
+async function downloadProtocolPDF(id){
+  const p = getProtoById(id);
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'mm', format:'a5'});
+  await buildProtocolPage(doc, p, true);
+  doc.save(`protocole-${id}.pdf`);
+}
+
+async function downloadImagePDF(id){
+  const imgFile = protoImageFile[id];
+  if(!imgFile) return;
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'mm', format:'a5'});
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const dataUrl = await loadImageAsDataUrl(imgFile);
+  doc.addImage(dataUrl, 'JPEG', 0, 0, pageW, pageH);
+  doc.save(`image-${id}.pdf`);
+}
+
+async function downloadAllPDF(){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'mm', format:'a5'});
+  for(let idx = 0; idx < protocolsMeta.length; idx++){
+    await buildProtocolPage(doc, protocolsMeta[idx], idx === 0);
+  }
+  doc.save('protocoles-urgence-aaron.pdf');
+}
+
+/* ---------- Service worker registration (offline, vrai fichier pour GitHub Pages) ---------- */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    // chemin relatif : fonctionne aussi bien à la racine que dans un sous-dossier de repo GitHub Pages
+    const swPath = new URL('sw.js', document.baseURI).href;
+    navigator.serviceWorker.register(swPath).catch(err => console.warn('SW non enregistré :', err));
+  });
+}
+</script>
+</body>
+</html>
