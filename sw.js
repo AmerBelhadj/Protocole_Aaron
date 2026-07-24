@@ -1,7 +1,7 @@
 // Service worker — Aaron Centres & Protocoles d'urgence
 // Stratégie : cache-first pour l'app shell local (fonctionnement garanti hors-ligne),
 // network-first (avec repli sur le cache) pour les ressources externes (tuiles de carte CDN).
-const CACHE_VERSION = 'aaron-app-v3';
+const CACHE_VERSION = 'aaron-app-v4';
 
 const APP_SHELL = [
   './',
